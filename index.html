@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lavandería de Cloody</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.js"></script>
+    <style>
+        body {
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f4f4f4;
+        }
+
+        canvas {
+            border: 1px solid #000;
+        }
+
+        #menu {
+            position: absolute;
+            top: 0; 
+            left: 0; 
+            right: 0; 
+            bottom: 0;
+            z-index: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            text-align: center;
+            background-image: url('assets/fondo.jpg');
+            background-size: cover;
+        }
+
+        .button {
+            margin: 10px;
+            padding: 10px 20px;
+            background: blue;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div id="menu">
+        <h1>Lavandería de Cloody</h1>
+        <button id="startBtn" class="button">Jugar Nuevo</button>
+    </div>
+
+    <script>
+        let money = 200;
+        let moneyText;
+        let currentClient = null;
+        let hasWashingMachine = false;
+        let hasDryer = false;
+
+        let dirtyZone, cleanZone, washZone, dryerZone;
+        let wetClothes = null;
+        let draggingWet = false;
+
+        const Juego = {
+            key: 'Juego',
+            preload,
+            create,
+            update
+        };
+
+        const config = {
+            type: Phaser.AUTO,
+            width: 800,
+            height: 600,
+            physics: {
+                default: 'arcade',
+                arcade: {
+                    gravity: { y: 0 },
+                    debug: false 
+                }
+            },
+            scene: Juego
+        };
+
+        const game = new Phaser.Game(config);
+
+        function preload() {
+            this.load.image('background', 'assets/fondo.jpg');
+            this.load.image('basket', 'assets/cestaropa.png');
+            this.load.image('wetClothes', 'assets/ropamojada.png');
+            this.load.image('cleanClothes', 'assets/ropalimpia.png');
+            this.load.image('client', 'assets/cliente.png');
+            this.load.image('washingMachine', 'assets/lavadora.png');
+            this.load.image('dryer', 'assets/secadora.png');
+            this.load.audio('musicaFondo', 'assets/musicaFondo.mp3');
+        }
+
+        function create() {
+            // Música
+            this.musica = this.sound.add('musicaFondo', { loop: true, volume: 0.5 });
+            this.musica.play();
+
+            // Fondo
+            this.add.image(400, 300, 'background').setDisplaySize(800, 600);
+
+            moneyText = this.add.text(16, 16, 'Dinero: $' + money, { fontSize: '32px', fill: '#fff' });
+
+            // Zonas
+            dirtyZone = this.add.rectangle(100, 100, 200, 100, 0xffffff, 0.5).setOrigin(0).setStrokeStyle(2, 0x000000);
+            washZone = this.add.rectangle(100, 300, 200, 200, 0xffffff, 0.5).setOrigin(0).setStrokeStyle(2, 0x000000);
+            dryerZone = this.add.rectangle(400, 300, 200, 200, 0xffffff, 0.5).setOrigin(0).setStrokeStyle(2, 0x000000);
+            cleanZone = this.add.rectangle(300, 500, 200, 100, 0xffffff, 0.5).setOrigin(0).setStrokeStyle(2, 0x000000);
+
+            this.add.text(40, 50, 'Zona Ropa Sucia', { fontSize: '16px', fill: '#000' });
+            this.add.text(80, 265, 'Zona de Lavado', { fontSize: '16px', fill: '#000' });
+            this.add.text(440, 265, 'Zona de Secado', { fontSize: '16px', fill: '#000' });
+            this.add.text(340, 470, 'Zona Ropa Limpia', { fontSize: '16px', fill: '#000' });
+
+            const washingMachineSprite = this.add.image(180, 390, 'washingMachine').setScale(0.05).setOrigin(0.5, 0.5).setVisible(false);
+            const dryerSprite = this.add.image(480, 390, 'dryer').setScale(0.05).setOrigin(0.5, 0.5).setVisible(false);
+            this.washingMachineSprite = washingMachineSprite;
+            this.dryerSprite = dryerSprite;
+
+            this.add.text(60, 250, ' Comprar Lavadora ($100)', { fontSize: '16px', fill: '#fff' })
+                .setInteractive().on('pointerdown', () => buyWashingMachine.call(this));
+
+            this.add.text(460, 250, ' Comprar Secadora ($100)', { fontSize: '16px', fill: '#fff' })
+                .setInteractive().on('pointerdown', () => buyDryer.call(this));
+
+            this.add.text(200, 30, 'Haz clic en los botones para comprar.', { fontSize: '24px', fill: '#fff' });
+        }
+
+        function update() {}
+
+        function buyWashingMachine() {
+            if (money >= 100 && !hasWashingMachine) {
+                money -= 100;
+                hasWashingMachine = true;
+                moneyText.setText('Dinero: $' + money);
+                this.washingMachineSprite.setVisible(true);
+                checkClientCreation.call(this);
+            }
+        }
+
+        function buyDryer() {
+            if (money >= 100 && !hasDryer) {
+                money -= 100;
+                hasDryer = true;
+                moneyText.setText('Dinero: $' + money);
+                this.dryerSprite.setVisible(true);
+                checkClientCreation.call(this);
+            }
+        }
+
+        function checkClientCreation() {
+            if (hasWashingMachine && hasDryer && !currentClient) {
+                createClient.call(this);
+            }
+        }
+
+        function createClient() {
+            const client = this.physics.add.sprite(100, 70, 'client').setScale(0.05).setInteractive();
+            currentClient = client;
+
+            this.tweens.add({
+                targets: client,
+                y: dirtyZone.y + dirtyZone.height / 2,
+                duration: 1000,
+                onComplete: () => {
+                    const basket = this.physics.add.sprite(
+                        dirtyZone.x + dirtyZone.width / 2,
+                        dirtyZone.y + dirtyZone.height / 2,
+                        'basket'
+                    ).setScale(0.15).setInteractive();
+                    basket.setName('dirty');
+
+                    this.input.setDraggable(basket);
+
+                    this.input.on('drag', (pointer, gameObject) => {
+                        gameObject.x = pointer.x;
+                        gameObject.y = pointer.y;
+                    });
+
+                    this.input.on('dragend', (pointer, gameObject) => {
+                        if (gameObject.texture.key === 'basket' && isOverlap(gameObject, washZone)) {
+                            basket.destroy();
+                            wetClothes = this.physics.add.sprite(
+                                washZone.x + washZone.width / 2,
+                                washZone.y + washZone.height / 2,
+                                'wetClothes'
+                            ).setScale(0.15).setInteractive();
+                            this.input.setDraggable(wetClothes);
+                        }
+
+                        if (gameObject.texture.key === 'wetClothes' && isOverlap(gameObject, dryerZone) && !draggingWet) {
+                            draggingWet = true;
+                            gameObject.destroy();
+
+                            const cleanClothes = this.physics.add.sprite(
+                                cleanZone.x + cleanZone.width / 2,
+                                cleanZone.y + cleanZone.height / 2,
+                                'cleanClothes'
+                            ).setScale(0.15).setInteractive();
+
+                            this.tweens.add({
+                                targets: currentClient,
+                                x: cleanZone.x + cleanZone.width / 2,
+                                y: cleanZone.y + cleanZone.height / 2 - 50,
+                                duration: 1000,
+                                onComplete: () => {
+                                    this.input.setDraggable(cleanClothes);
+                                    this.input.on('dragend', (pointer, ropaLimpia) => {
+                                        if (ropaLimpia.texture.key === 'cleanClothes' && isOverlap(ropaLimpia, cleanZone)) {
+                                            ropaLimpia.destroy();
+                                            money += 10;
+                                            moneyText.setText('Dinero: $' + money);
+                                            currentClient.destroy();
+                                            currentClient = null;
+                                            draggingWet = false;
+                                            createClient.call(this);
+                                        }
+                                    });
+                                }
+                            });
+                        }
+                    });
+                }
+            });
+        }
+
+        function isOverlap(objA, objB) {
+            const boundsA = objA.getBounds();
+            const boundsB = objB.getBounds();
+            return Phaser.Geom.Intersects.RectangleToRectangle(boundsA, boundsB);
+        }
+
+         document.getElementById('startBtn').addEventListener('click', function () {
+    const menu = document.getElementById('menu');
+    
+    // Cambia el contenido del menú a "Cargando..."
+    menu.innerHTML = '<h1 style="color: white;">Cargando...</h1>';
+
+    // Pequeño delay opcional para que el usuario vea el texto antes de desaparecer
+    setTimeout(() => {
+        menu.style.display = 'none';
+        game.scene.start('Juego');
+    }, 500); // 500 milisegundos (medio segundo)
+});   </script>
+</body>
+</html>
